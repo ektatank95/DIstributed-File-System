@@ -4,7 +4,10 @@ import java.rmi.Remote;
 import java.rmi.RemoteException;
 import java.util.List;
 
-public interface MasterServerClientInterface extends Remote {
+/**
+ * This interface is provide method to communicate between NamingServer and CLient
+ */
+public interface NamingServerClientInterface extends Remote {
 
 	/**
 	 * Read file from server

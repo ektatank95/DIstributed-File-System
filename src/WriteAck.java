@@ -1,5 +1,8 @@
 import java.io.Serializable;
 
+/**
+ * Class is used as a response object from naming server to Client with storage Server location having file which client is wishing to right
+ */
 
 public class WriteAck implements Serializable{
 	

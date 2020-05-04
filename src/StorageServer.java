@@ -1,16 +1,11 @@
-import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
-import java.io.IOException;
+import java.io.*;
 import java.rmi.AccessException;
 import java.rmi.NotBoundException;
 import java.rmi.Remote;
 import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
+import java.rmi.server.UnicastRemoteObject;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -21,33 +16,32 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class StorageServer implements StorageServerClientInterface,
-		StorageMasterInterface, StorageStorageInterface, Remote {
+		StorageNamingServerInterface, StorageStorageInterface, Remote {
 
 	
-	private int regPort = Configurations.REG_PORT;
-	private String regAddr = Configurations.REG_ADDR;
+	private int regPort = Configurations.REGISTRATION_PORT;
+	private String regAddr = Configurations.REGISRATION_ADDRESS;
 	
 	private int id;
 	private String dir;
 	private Registry registry;
-	
 	private Map<Long, String> activeTxn; // map between active transactions and file names
 	private Map<Long, Map<Long, byte[]>> txnFileMap; // map between transaction ID and corresponding file chunks
 	private Map<String,	 List<StorageStorageInterface> > filesReplicaMap; //replicas where files that this replica is its master are replicated
-	private Map<Integer, StorageLocation> replicaServersLoc; // Map<ReplicaID, replicaLoc>
-	private Map<Integer, StorageStorageInterface> replicaServersStubs; // Map<ReplicaID, replicaStub>
+	private Map<Integer, StorageLocation> stoargeServersLocation; // Map<ReplicaID, replicaLoc>
+	private Map<Integer, StorageStorageInterface> storageServersStubs; // Map<ReplicaID, replicaStub>
 	private ConcurrentMap<String, ReentrantReadWriteLock> locks; // locks objects of the open files
-	
+
+	//ellobrate....
 	public StorageServer(int id, String dir) {
 		this.id = id;
-		this.dir = dir+"/Replica_"+id+"/";
+		this.dir = dir+"/StorageServer_"+id+"/";
 		txnFileMap = new TreeMap<Long, Map<Long, byte[]>>();
 		activeTxn = new TreeMap<Long, String>();
 		filesReplicaMap = new TreeMap<String, List<StorageStorageInterface>>();
-		replicaServersLoc = new TreeMap<Integer, StorageLocation>();
-		replicaServersStubs = new TreeMap<Integer, StorageStorageInterface>();
+		stoargeServersLocation = new TreeMap<Integer, StorageLocation>();
+		storageServersStubs = new TreeMap<Integer, StorageStorageInterface>();
 		locks = new ConcurrentHashMap<String, ReentrantReadWriteLock>();
-		
 		File file = new File(this.dir);
 		if (!file.exists()){
 			file.mkdir();
@@ -60,13 +54,43 @@ public class StorageServer implements StorageServerClientInterface,
 		}
 	}
 
-	@Override
+
+	/**
+	 * Storage servers and register replicas at naming server
+	 * @param namingServer
+	 * @throws IOException
+	 */
+	static void createStorageServer(NamingServer namingServer)throws IOException{
+		System.out.println("creating storage server as per requirment of DFS");
+		BufferedReader br = new BufferedReader(new FileReader("storageServerInfo.txt"));
+		int n = Integer.parseInt(br.readLine().trim());
+		StorageLocation storageLocation;
+		String s;
+		for (int i = 0; i < n; i++) {
+			s = br.readLine().trim();
+			storageLocation = new StorageLocation(i, s.substring(0, s.indexOf(':')) , true);
+			StorageServer rs = new StorageServer(i, "./");
+
+			//create serverstub for each storageserver
+			Remote storageserverStub = (Remote) UnicastRemoteObject.exportObject(rs, 0);
+			DFSMain.registry.rebind("ReplicaClient"+i, storageserverStub);
+
+			//register this storage server with registry
+			namingServer.registerStorageServer(storageLocation, storageserverStub);
+			System.out.println(" Storage Server created and registered with naming server with id: "+rs.id+" and status: "+rs.isAlive());
+		}
+		br.close();
+	}
+
+
+    @Override
 	public void createFile(String fileName) throws IOException {
+
+		//created a file on storage server with  whole file path= dir+fileName
 		File file = new File(dir+fileName);
-		
 		locks.putIfAbsent(fileName, new ReentrantReadWriteLock());
+		//creating file is a sync task so lock task before file creation, to gain thread safety
 		ReentrantReadWriteLock lock = locks.get(fileName);
-		
 		lock.writeLock().lock();
 		file.createNewFile();
 		lock.writeLock().unlock();
@@ -97,13 +121,12 @@ public class StorageServer implements StorageServerClientInterface,
 	@Override
 	public ChunkAck write(long txnID, long msgSeqNum, FileContent data)
 			throws RemoteException, IOException {
-		System.out.println("[@ReplicaServer] write "+msgSeqNum);
+		System.out.println("[@StorageServer] write "+msgSeqNum);
 		// if this is not the first message of the write transaction
 		if (!txnFileMap.containsKey(txnID)){
 			txnFileMap.put(txnID, new TreeMap<Long, byte[]>());
 			activeTxn.put(txnID, data.getFileName());
 		}
-
 		Map<Long, byte[]> chunkMap =  txnFileMap.get(txnID);
 		chunkMap.put(msgSeqNum, data.getData());
 		return new ChunkAck(txnID, msgSeqNum);
@@ -112,8 +135,6 @@ public class StorageServer implements StorageServerClientInterface,
 	@Override
 	public boolean commit(long txnID, long numOfMsgs)
 			throws MessageNotFoundException, RemoteException, IOException {
-		
-		
 		System.out.println("[@Replica] commit intiated");
 		Map<Long, byte[]> chunkMap = txnFileMap.get(txnID);
 		if (chunkMap.size() < numOfMsgs)
@@ -128,27 +149,19 @@ public class StorageServer implements StorageServerClientInterface,
 				// TODO handle failure 
 			}
 		}
-		
-		
+
 		BufferedOutputStream bw =new BufferedOutputStream(new FileOutputStream(dir+fileName, true));
-		
 		locks.putIfAbsent(fileName, new ReentrantReadWriteLock());
 		ReentrantReadWriteLock lock = locks.get(fileName);
-		
 		lock.writeLock().lock();
 		for (Iterator<byte[]> iterator = chunkMap.values().iterator(); iterator.hasNext();) 
 			bw.write(iterator.next());
 		bw.close();
 		lock.writeLock().unlock();
-		
-		
 		for (StorageStorageInterface replica : slaveReplicas)
 			replica.releaseLock(fileName);
-		
-		
 		activeTxn.remove(txnID);
 		txnFileMap.remove(txnID);
-		
 		return false;
 	}
 
@@ -164,17 +177,12 @@ public class StorageServer implements StorageServerClientInterface,
 	public boolean reflectUpdate(long txnID, String fileName, ArrayList<byte[]> data) throws IOException{
 		System.out.println("[@Replica] reflect update initiated");
 		BufferedOutputStream bw =new BufferedOutputStream(new FileOutputStream(dir+fileName, true));
-
-
 		locks.putIfAbsent(fileName, new ReentrantReadWriteLock());
 		ReentrantReadWriteLock lock = locks.get(fileName);
-		
 		lock.writeLock().lock(); // don't release lock here .. making sure coming reads can't proceed
 		for (Iterator<byte[]> iterator = data.iterator(); iterator.hasNext();) 
 			bw.write(iterator.next());
 		bw.close();
-		
-		
 		activeTxn.remove(txnID);
 		return true;
 	}
@@ -186,28 +194,28 @@ public class StorageServer implements StorageServerClientInterface,
 	}
 
 	@Override
-	public void takeCharge(String fileName, List<StorageLocation> slaveReplicas) throws AccessException, RemoteException, NotBoundException {
-		System.out.println("[@Replica] taking charge of file: "+fileName);
-		System.out.println(slaveReplicas);
+	public void takeCharge(String fileName, List<StorageLocation> slaveStorageServers) throws AccessException, RemoteException, NotBoundException {
+		System.out.println("[@Storage Server "+ this.id+ "] taking charge of file: "+fileName);
+		System.out.println(slaveStorageServers);
 		
-		List<StorageStorageInterface> slaveReplicasStubs = new ArrayList<StorageStorageInterface>(slaveReplicas.size());
+		List<StorageStorageInterface> slaveStorageServersStubs = new ArrayList<StorageStorageInterface>(slaveStorageServers.size());
 		
-		for (StorageLocation loc : slaveReplicas) {
+		for (StorageLocation loc : slaveStorageServers) {
 			// if the current locations is this replica .. ignore
 			if (loc.getId() == this.id)
 				continue;
 			  
 			// if this is a new replica generate stub for this replica
-			if (!replicaServersLoc.containsKey(loc.getId())){
-				replicaServersLoc.put(loc.getId(), loc);
+			if (!stoargeServersLocation.containsKey(loc.getId())){
+				stoargeServersLocation.put(loc.getId(), loc);
 				StorageStorageInterface stub = (StorageStorageInterface) registry.lookup("ReplicaClient"+loc.getId());
-				replicaServersStubs.put(loc.getId(), stub);
+				storageServersStubs.put(loc.getId(), stub);
 			}
-			StorageStorageInterface replicaStub = replicaServersStubs.get(loc.getId());
-			slaveReplicasStubs.add(replicaStub);
+			StorageStorageInterface replicaStub = storageServersStubs.get(loc.getId());
+			slaveStorageServersStubs.add(replicaStub);
 		}
 		
-		filesReplicaMap.put(fileName, slaveReplicasStubs);
+		filesReplicaMap.put(fileName, slaveStorageServersStubs);
 	}
 	
 

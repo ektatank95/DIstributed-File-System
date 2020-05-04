@@ -5,7 +5,7 @@ import java.rmi.RemoteException;
 import java.util.List;
 
 
-public interface  StorageMasterInterface extends Remote {
+public interface StorageNamingServerInterface extends Remote {
 	
 	/**
 	 * creates the file at the replica server 

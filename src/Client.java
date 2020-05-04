@@ -9,30 +9,34 @@ import java.util.List;
 public class Client {
 
 
-	MasterServerClientInterface masterStub;
+	NamingServerClientInterface namingServerStub;
 	static Registry registry;
-	int regPort = Configurations.REG_PORT;
-	String regAddr = Configurations.REG_ADDR;
+	int regPort = Configurations.REGISTRATION_PORT;
+	String regAddr = Configurations.REGISRATION_ADDRESS;
 	int chunkSize = Configurations.CHUNK_SIZE; // in bytes 
 	
 	public Client() {
 		try {
+			//create client object and register in locateRegistry
 			registry = LocateRegistry.getRegistry(regAddr, regPort);
-			masterStub =  (MasterServerClientInterface) registry.lookup("MasterServerClientInterface");
-			System.out.println("[@client] Master Stub fetched successfuly");
+			//lookup and get stub of naming server
+			namingServerStub =  (NamingServerClientInterface) registry.lookup("NamingServerClientInterface");
+			System.out.println("[@client] Naming server  Stub fetched successfuly");
 		} catch (RemoteException | NotBoundException e) {
 			// fatal error .. no registry could be linked
 			e.printStackTrace();
 		}
 	}
 
+
+
 	public byte[] read(String fileName) throws IOException, NotBoundException{
-		List<StorageLocation> locations = masterStub.read(fileName);
-		System.out.println("[@client] Master Granted read operation");
+		List<StorageLocation> locations = namingServerStub.read(fileName);
+		System.out.println("[@client] Naming Server Granted read operation");
 		
 		// TODO fetch from all and verify 
 		StorageLocation replicaLoc = locations.get(0);
-
+         //get storageServerstub of storoage server where file is specified..
 		StorageServerClientInterface replicaStub = (StorageServerClientInterface) registry.lookup("ReplicaClient"+replicaLoc.getId());
 		FileContent fileContent = replicaStub.read(fileName);
 		System.out.println("[@client] read operation completed successfuly");
@@ -42,27 +46,15 @@ public class Client {
 		return fileContent.getData();
 	}
 	
-	public StorageServerClientInterface initWrite(String fileName, Long txnID) throws IOException, NotBoundException{
-		WriteAck ackMsg = masterStub.write(fileName);
-		txnID = new Long(ackMsg.getTransactionId());
-		return (StorageServerClientInterface) registry.lookup("ReplicaClient"+ackMsg.getLoc().getId());
-	}
-	
-	public void writeChunk (long txnID, String fileName, byte[] chunk, long seqN, StorageServerClientInterface replicaStub) throws RemoteException, IOException{
-		
-		FileContent fileContent = new FileContent(fileName, chunk);
-		ChunkAck chunkAck;
-		
-		do { 
-			chunkAck = replicaStub.write(txnID, seqN, fileContent);
-		} while(chunkAck.getSeqNo() != seqN);
-	}
-	
+
+
+	//doubt
 	public void write (String fileName, byte[] data) throws IOException, NotBoundException, MessageNotFoundException{
-		WriteAck ackMsg = masterStub.write(fileName);
-		StorageServerClientInterface replicaStub = (StorageServerClientInterface) registry.lookup("ReplicaClient"+ackMsg.getLoc().getId());
+		//client will request namingServer to give write access to particular File .This  request is done to get location of storage server
+		WriteAck ackMsg = namingServerStub.write(fileName);
+		StorageServerClientInterface storageServerStub = (StorageServerClientInterface) registry.lookup("ReplicaClient"+ackMsg.getLoc().getId());
 		
-		System.out.println("[@client] Master granted write operation");
+		System.out.println("[@client] Naming Server  granted write operation to Client");
 		
 		int segN = (int) Math.ceil(1.0*data.length/chunkSize);
 		FileContent fileContent = new FileContent(fileName);
@@ -73,7 +65,7 @@ public class Client {
 			System.arraycopy(data, i*chunkSize, chunk, 0, chunkSize);
 			fileContent.setData(chunk);
 			do { 
-				chunkAck = replicaStub.write(ackMsg.getTransactionId(), i, fileContent);
+				chunkAck = storageServerStub.write(ackMsg.getTransactionId(), i, fileContent);
 			} while(chunkAck.getSeqNo() != i);
 		}
 
@@ -85,23 +77,23 @@ public class Client {
 		System.arraycopy(data, segN-1, chunk, 0, lastChunkLen);
 		fileContent.setData(chunk);
 		do { 
-			chunkAck = replicaStub.write(ackMsg.getTransactionId(), segN-1, fileContent);
+			chunkAck = storageServerStub.write(ackMsg.getTransactionId(), segN-1, fileContent);
 		} while(chunkAck.getSeqNo() != segN-1 );
 		
 		
 		System.out.println("[@client] write operation complete");
-		replicaStub.commit(ackMsg.getTransactionId(), segN);
+		storageServerStub.commit(ackMsg.getTransactionId(), segN);
 		System.out.println("[@client] commit operation complete");
 	}
 	
-	public void commit(String fileName, long txnID, long seqN) throws MessageNotFoundException, IOException, NotBoundException{
-		StorageLocation primaryLoc = masterStub.locatePrimaryReplica(fileName);
+	/*public void commit(String fileName, long txnID, long seqN) throws MessageNotFoundException, IOException, NotBoundException{
+		StorageLocation primaryLoc = namingServerStub.locatePrimaryReplica(fileName);
 		StorageServerClientInterface primaryStub = (StorageServerClientInterface) registry.lookup("ReplicaClient"+primaryLoc.getId());
 		primaryStub.commit(txnID, seqN);
 		System.out.println("[@client] commit operation complete");
 	}
-	
-	public void batchOperations(String[] cmds){
+	*/
+/*	public void batchOperations(String[] cmds){
 		System.out.println("[@client] batch operations started");
 		String cmd ;
 		String[] tokens;
@@ -120,6 +112,43 @@ public class Client {
 			}
 		}
 		System.out.println("[@client] batch operations completed");
+	}*/
+
+
+	public static void launchClients(){
+		try {
+			Client c = new Client();
+			char[] ss = "File 1 test test END ".toCharArray();
+			byte[] data = new byte[ss.length];
+			for (int i = 0; i < ss.length; i++)
+				data[i] = (byte) ss[i];
+
+			c.write("file1", data);
+			byte[] ret = c.read("file1");
+			System.out.println("file1: " + ret);
+
+			c = new Client();
+			ss = "File 1 Again Again END ".toCharArray();
+			data = new byte[ss.length];
+			for (int i = 0; i < ss.length; i++)
+				data[i] = (byte) ss[i];
+
+			c.write("file1", data);
+			ret = c.read("file1");
+			System.out.println("file1: " + ret);
+
+			c = new Client();
+			ss = "File 2 test test END ".toCharArray();
+			data = new byte[ss.length];
+			for (int i = 0; i < ss.length; i++)
+				data[i] = (byte) ss[i];
+
+			c.write("file2", data);
+			ret = c.read("file2");
+			System.out.println("file2: " + ret);
+
+		} catch (NotBoundException | IOException | MessageNotFoundException e) {
+			e.printStackTrace();
+		}
 	}
-	
 }
