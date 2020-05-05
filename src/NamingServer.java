@@ -71,11 +71,9 @@ public class NamingServer implements Remote, NamingServerClientInterface {
 		NamingServerClientInterface namingServerStub=
 				(NamingServerClientInterface) UnicastRemoteObject.exportObject(namingServer, 0);
 		DFSMain.registry.rebind("NamingServerClientInterface", namingServerStub);
-		System.err.println("Naming Server is ready to accept register storage server and to serve client read write request");
+		System.out.println("\nNaming Server is ready to accept register storage server and to serve client read write request");
 		return namingServer;
 	}
-
-
 
 	/**
 	 * elects a new primary replica for the given file
@@ -121,7 +119,7 @@ public class NamingServer implements Remote, NamingServerClientInterface {
 	}
 
 	private List<StorageLocation> findStorageLocationOfFile(String fileName){
-		System.out.println("[@Naming Server] delete request initiated");
+		System.out.println("[@Naming Server] asking storage servers storing "+fileName+ "to delete file\n");
 
 		//naming server will check its registry to get details of storage server having file requested by client..
 		// it will give list of storage server..
@@ -140,11 +138,11 @@ public class NamingServer implements Remote, NamingServerClientInterface {
 	 * @param fileName
 	 */
 	public void createNewFile(String fileName) {
-		System.out.println("[@Naming Server] Creating new file initiated");
+		System.out.println("Naming Server   is  Creating new file with file name "+fileName);
 		int luckyServers[] = new int[replicationFactor];
 		List<StorageLocation> storageServers = new ArrayList<StorageLocation>();
 		Set<Integer> chosenStorageServers = new TreeSet<Integer>();
-
+		System.out.println();
 		for (int i = 0; i < luckyServers.length; i++) {
 
 			// TODO if no replica alive enter infinte loop
@@ -154,6 +152,7 @@ public class NamingServer implements Remote, NamingServerClientInterface {
 //				System.err.println(stoargeServersLocationList.get(luckyServers[i]).isAlive());
 			} while(!stoargeServersLocationList.get(luckyServers[i]).isAlive() || chosenStorageServers.contains(luckyServers[i]));
 
+			System.out.println("StorageServer_"+luckyServers[i]+" choosen to store new file");
 			chosenStorageServers.add(luckyServers[i]);
 			// add the lucky storage location to the list of storageServers maintaining the file
 			storageServers.add(stoargeServersLocationList.get(luckyServers[i]));
@@ -168,6 +167,8 @@ public class NamingServer implements Remote, NamingServerClientInterface {
 
 		}
 
+
+		System.out.println();
 		// the primary replica is the first lucky replica picked
 		int primary = luckyServers[0];
 		try {
@@ -195,7 +196,7 @@ public class NamingServer implements Remote, NamingServerClientInterface {
 	//client request will propage here to get storage server object
 	@Override
 	public WriteAck write(String fileName) throws RemoteException, IOException {
-		System.out.println("[@Naming Server] write request initiated");
+		System.out.println(" Naming Server is asking Storage server to write  into file "+fileName+"\n");
 		long timeStamp = System.currentTimeMillis();
 		//naming server will check its registry to get details of storage server having file requested by client..
         // it will give list of storage server..
@@ -203,6 +204,8 @@ public class NamingServer implements Remote, NamingServerClientInterface {
 		int tid = nextTID++;
 		//list of storage server can be null...create new file and assign on random storage servers
 		if (storageServerLocationWithFile == null)	// file not found
+			System.out.println(" No Storage Server exists with given fileName "+fileName+"\n");
+			System.out.println("File is going to be created on "+replicationFactor+ " storage server\n");
 			createNewFile(fileName);
 
 		StorageLocation primaryStorageLocationForFile = primaryStorageServerMap.get(fileName);

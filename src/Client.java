@@ -22,7 +22,6 @@ public class Client {
 			registry = LocateRegistry.getRegistry(regAddr, regPort);
 			//lookup and get stub of naming server
 			namingServerStub =  (NamingServerClientInterface) registry.lookup("NamingServerClientInterface");
-			System.out.println("[@client] Naming server  Stub fetched successfuly");
 		} catch (RemoteException | NotBoundException e) {
 			// fatal error .. no registry could be linked
 			e.printStackTrace();
@@ -31,20 +30,18 @@ public class Client {
 
 
 
-	public byte[] read(String fileName) throws IOException, NotBoundException{
+	public void read(String fileName) throws IOException, NotBoundException{
 		List<StorageLocation> locations = namingServerStub.read(fileName);
-		System.out.println("[@client] Naming Server Granted read operation");
-		
+		System.out.println("Naming Server Granted read operation for file"+fileName);
 		// TODO fetch from all and verify 
 		StorageLocation storageLocation = locations.get(0);
          //get storageServerstub of storoage server where file is specified..
 		StorageServerClientInterface storageServerStub = (StorageServerClientInterface) registry.lookup("StorageServer_"+storageLocation.getId());
 		FileContent fileContent = storageServerStub.read(fileName);
-		System.out.println("[@client] read operation completed successfuly");
-		System.out.println("[@client] data:");
-		
+		System.out.println(" ---- Content of File are as Given below...\n");
+		System.out.println("--------------------------------Read Start------------------------------------------------------------");
 		System.out.println(new String(fileContent.getData()));
-		return fileContent.getData();
+		System.out.println("---------------------------------Read End -----------------------------------------------------------");
 	}
 	
 
@@ -56,7 +53,7 @@ public class Client {
 		WriteAck ackMsg = namingServerStub.write(fileName);
 		StorageServerClientInterface storageServerStub = (StorageServerClientInterface) registry.lookup("StorageServer_" +ackMsg.getLoc().getId());
 
-		System.out.println("[@client] Naming Server  granted write operation to Client");
+		System.out.println(" Naming Server granted write operation to Client and give storage server information with required file\n");
 
 		//write in segN parts
 		int segN = (int) Math.ceil(1.0*data.length/chunkSize);
@@ -85,9 +82,9 @@ public class Client {
 		} while(chunkAck.getSeqNo() != segN-1 );
 		
 		
-		System.out.println("[@client] write operation complete");
+		System.out.println(" write operation completed successfully\n");
 		storageServerStub.commit(ackMsg.getTransactionId(), segN);
-		System.out.println("[@client] commit operation complete");
+		System.out.println("commit operation completed successfully\n");
 	}
 
 	public static void launchClients(){
@@ -99,8 +96,7 @@ public class Client {
 				data[i] = (byte) ss[i];
 
 			c.write("bhautik", data);
-			byte[] ret = c.read("bhautik");
-			System.out.println("bhautik: " + ret);
+			 c.read("bhautik");
 
 
 			c = new Client();
@@ -110,8 +106,7 @@ public class Client {
 				data[i] = (byte) ss[i];
 
 			c.write("file1", data);
-			ret = c.read("file1");
-			System.out.println("file1: " + ret);
+			 c.read("file1");
 
 			c = new Client();
 			ss = "File 2 test test END ".toCharArray();
@@ -120,8 +115,7 @@ public class Client {
 				data[i] = (byte) ss[i];
 
 			c.write("file2", data);
-			ret = c.read("file2");
-			System.out.println("file2: " + ret);
+			c.read("file2");
 
 		} catch (NotBoundException | IOException | MessageNotFoundException e) {
 			e.printStackTrace();
@@ -135,12 +129,12 @@ public class Client {
     public String deleteFile(String fileName) throws IOException, NotBoundException {
         List<StorageServerClientInterface> storageServers = findStorageLocation(fileName);
         if (storageServers==null){
-        	return "File not found";
+        	return "File does not exist with Name "+fileName;
 		}
         for (int i=0;i<storageServers.size();i++) {
             storageServers.get(i).deleteFile(fileName);
         }
-        return "File deleted return dummy";
+        return "File deleted successfully\n";
     }
 
     private List<StorageServerClientInterface> findStorageLocation(String fileName) throws RemoteException, NotBoundException {

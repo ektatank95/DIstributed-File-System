@@ -62,12 +62,14 @@ public class StorageServer implements StorageServerClientInterface,
 	 * @throws IOException
 	 */
 	static void createStorageServer(NamingServer namingServer)throws IOException{
-		System.out.println("creating storage server as per requirment of DFS");
+
+		System.out.println("\ncreating storage server as per requirment of DFS");
 		BufferedReader br = new BufferedReader(new FileReader(storageInfoFile));
 
 		int n = Integer.parseInt(br.readLine().trim());
 		StorageLocation storageLocation;
 		String s;
+		System.out.println();
 		for (int i = 0; i < n; i++) {
 			s = br.readLine().trim();
 			// give id to server as per num of line
@@ -82,6 +84,7 @@ public class StorageServer implements StorageServerClientInterface,
 			namingServer.registerStorageServer(storageLocation, storageserverStub);
 			System.out.println(" Storage Server created and registered with naming server with id: "+rs.id+" and status: "+rs.isAlive());
 		}
+		System.out.println();
 		br.close();
 	}
 
@@ -139,7 +142,7 @@ public class StorageServer implements StorageServerClientInterface,
 	@Override
 	public ChunkAck write(long txnID, long msgSeqNum, FileContent data)
 			throws RemoteException, IOException {
-		System.out.println("[@StorageServer] write "+msgSeqNum);
+		//System.out.println("[@StorageServer] write "+msgSeqNum);
 		// if this is not the first message of the write transaction
 		if (!txnFileMap.containsKey(txnID)){
 			txnFileMap.put(txnID, new TreeMap<Long, byte[]>());
@@ -153,7 +156,7 @@ public class StorageServer implements StorageServerClientInterface,
 	@Override
 	public boolean commit(long txnID, long numOfMsgs)
 			throws MessageNotFoundException, RemoteException, IOException {
-		System.out.println("[@Storage Server] commit intiated");
+		System.out.println(" StorageServer_"+this.id+" commiting a file ");
 		Map<Long, byte[]> chunkMap = txnFileMap.get(txnID);
 		if (chunkMap.size() < numOfMsgs)
 			throw new MessageNotFoundException();
@@ -193,7 +196,7 @@ public class StorageServer implements StorageServerClientInterface,
 
 	@Override
 	public boolean reflectUpdate(long txnID, String fileName, ArrayList<byte[]> data) throws IOException{
-		System.out.println("[@Slave Storage Server] reflect update initiated");
+		System.out.println(" Slave Storage Server with id Storage_Server"+ this.id+ "reflect update initiated");
 		BufferedOutputStream bw =new BufferedOutputStream(new FileOutputStream(dir+fileName, true));
 		locks.putIfAbsent(fileName, new ReentrantReadWriteLock());
 		ReentrantReadWriteLock lock = locks.get(fileName);
@@ -213,9 +216,7 @@ public class StorageServer implements StorageServerClientInterface,
 
 	@Override
 	public void takeCharge(String fileName, List<StorageLocation> slaveStorageServers) throws AccessException, RemoteException, NotBoundException {
-		System.out.println("[@Storage Server "+ this.id+ "] taking charge of file: "+fileName);
-		System.out.println(slaveStorageServers);
-		
+		System.out.println("Storage Server "+ this.id+ " taking charge of file: "+fileName);
 		List<StorageStorageInterface> slaveStorageServersStubs = new ArrayList<StorageStorageInterface>(slaveStorageServers.size());
 		
 		for (StorageLocation loc : slaveStorageServers) {
