@@ -21,6 +21,7 @@ public class StorageServer implements StorageServerClientInterface,
 	
 	private int regPort = Configurations.REGISTRATION_PORT;
 	private String regAddr = Configurations.REGISRATION_ADDRESS;
+	static String storageInfoFile = Configurations.STORAGE_INFO_FILE;
 	
 	private int id;
 	private String dir;
@@ -62,18 +63,20 @@ public class StorageServer implements StorageServerClientInterface,
 	 */
 	static void createStorageServer(NamingServer namingServer)throws IOException{
 		System.out.println("creating storage server as per requirment of DFS");
-		BufferedReader br = new BufferedReader(new FileReader("storageServerInfo.txt"));
+		BufferedReader br = new BufferedReader(new FileReader(storageInfoFile));
+
 		int n = Integer.parseInt(br.readLine().trim());
 		StorageLocation storageLocation;
 		String s;
 		for (int i = 0; i < n; i++) {
 			s = br.readLine().trim();
+			// give id to server as per num of line
 			storageLocation = new StorageLocation(i, s.substring(0, s.indexOf(':')) , true);
 			StorageServer rs = new StorageServer(i, "./");
 
 			//create serverstub for each storageserver
 			Remote storageserverStub = (Remote) UnicastRemoteObject.exportObject(rs, 0);
-			DFSMain.registry.rebind("ReplicaClient"+i, storageserverStub);
+			DFSMain.registry.rebind("StorageServer_"+i, storageserverStub);
 
 			//register this storage server with registry
 			namingServer.registerStorageServer(storageLocation, storageserverStub);
@@ -97,13 +100,28 @@ public class StorageServer implements StorageServerClientInterface,
 	}
 
 	@Override
+	public String deleteFile(String fileName) throws IOException {
+
+		//delete a file on storage server
+		File file = new File(dir+fileName);
+		locks.putIfAbsent(fileName, new ReentrantReadWriteLock());
+		//creating file is a sync task so lock task before file creation, to gain thread safety
+		ReentrantReadWriteLock lock = locks.get(fileName);
+		lock.writeLock().lock();
+		file.delete();
+		lock.writeLock().unlock();
+		return "File deleted successfully";
+	}
+
+
+	@Override
 	public FileContent read(String fileName) throws FileNotFoundException,
 			RemoteException, IOException {
 		File f = new File(dir+fileName);
 		
 		locks.putIfAbsent(fileName, new ReentrantReadWriteLock());
 		ReentrantReadWriteLock lock = locks.get(fileName);
-		
+
 		@SuppressWarnings("resource")
 		BufferedInputStream br = new BufferedInputStream(new FileInputStream(f));
 		
@@ -135,15 +153,15 @@ public class StorageServer implements StorageServerClientInterface,
 	@Override
 	public boolean commit(long txnID, long numOfMsgs)
 			throws MessageNotFoundException, RemoteException, IOException {
-		System.out.println("[@Replica] commit intiated");
+		System.out.println("[@Storage Server] commit intiated");
 		Map<Long, byte[]> chunkMap = txnFileMap.get(txnID);
 		if (chunkMap.size() < numOfMsgs)
 			throw new MessageNotFoundException();
 		
 		String fileName = activeTxn.get(txnID);
-		List<StorageStorageInterface> slaveReplicas = filesReplicaMap.get(fileName);
+		List<StorageStorageInterface> slaveStorageServer = filesReplicaMap.get(fileName);
 		
-		for (StorageStorageInterface replica : slaveReplicas) {
+		for (StorageStorageInterface replica : slaveStorageServer) {
 			boolean sucess = replica.reflectUpdate(txnID, fileName, new ArrayList<>(chunkMap.values()));
 			if (!sucess) {
 				// TODO handle failure 
@@ -158,7 +176,7 @@ public class StorageServer implements StorageServerClientInterface,
 			bw.write(iterator.next());
 		bw.close();
 		lock.writeLock().unlock();
-		for (StorageStorageInterface replica : slaveReplicas)
+		for (StorageStorageInterface replica : slaveStorageServer)
 			replica.releaseLock(fileName);
 		activeTxn.remove(txnID);
 		txnFileMap.remove(txnID);
@@ -175,7 +193,7 @@ public class StorageServer implements StorageServerClientInterface,
 
 	@Override
 	public boolean reflectUpdate(long txnID, String fileName, ArrayList<byte[]> data) throws IOException{
-		System.out.println("[@Replica] reflect update initiated");
+		System.out.println("[@Slave Storage Server] reflect update initiated");
 		BufferedOutputStream bw =new BufferedOutputStream(new FileOutputStream(dir+fileName, true));
 		locks.putIfAbsent(fileName, new ReentrantReadWriteLock());
 		ReentrantReadWriteLock lock = locks.get(fileName);
@@ -208,7 +226,7 @@ public class StorageServer implements StorageServerClientInterface,
 			// if this is a new replica generate stub for this replica
 			if (!stoargeServersLocation.containsKey(loc.getId())){
 				stoargeServersLocation.put(loc.getId(), loc);
-				StorageStorageInterface stub = (StorageStorageInterface) registry.lookup("ReplicaClient"+loc.getId());
+				StorageStorageInterface stub = (StorageStorageInterface) registry.lookup("StorageServer_"+loc.getId());
 				storageServersStubs.put(loc.getId(), stub);
 			}
 			StorageStorageInterface replicaStub = storageServersStubs.get(loc.getId());

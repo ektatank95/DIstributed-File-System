@@ -56,6 +56,28 @@ public class NamingServer implements Remote, NamingServerClientInterface {
 	}
 
 	/**
+	 *
+	 * @return
+	 * @throws AccessException
+	 * @throws RemoteException
+	 */
+
+
+	static NamingServer createNamingServer() throws AccessException, RemoteException{
+
+		//step 3 a) to go no-arg constructor of NamingServer..
+		NamingServer namingServer = new NamingServer();
+		//step 4: generate namingServerStub and bind with registry
+		NamingServerClientInterface namingServerStub=
+				(NamingServerClientInterface) UnicastRemoteObject.exportObject(namingServer, 0);
+		DFSMain.registry.rebind("NamingServerClientInterface", namingServerStub);
+		System.err.println("Naming Server is ready to accept register storage server and to serve client read write request");
+		return namingServer;
+	}
+
+
+
+	/**
 	 * elects a new primary replica for the given file
 	 * @param fileName
 	 */
@@ -81,21 +103,53 @@ public class NamingServer implements Remote, NamingServerClientInterface {
 		}
 	}
 
+	@Override
+	public void createNewEmptyFile(String fileName)
+			throws RemoteException {
+
+		createNewFile(fileName);
+	}
+
+	@Override
+	public String deleteFile(String fileName) throws RemoteException {
+		return deleteGivenFile(fileName);
+	}
+
+	@Override
+	public List<StorageLocation> fileStorageLocation(String fileName) throws RemoteException {
+		return findStorageLocationOfFile(fileName);
+	}
+
+	private List<StorageLocation> findStorageLocationOfFile(String fileName){
+		System.out.println("[@Naming Server] delete request initiated");
+
+		//naming server will check its registry to get details of storage server having file requested by client..
+		// it will give list of storage server..
+		List<StorageLocation> storageServerLocationWithFile= filesLocationMap.get(fileName);
+        return  storageServerLocationWithFile;
+	}
+	private String deleteGivenFile(String fileName) {
+
+		return "File deleted";
+	}
+
+
 	/**
 	 * creates a new file @ N replica servers that are randomly chosen
 	 * elect the primary replica at random
 	 * @param fileName
 	 */
-	private void createNewFile(String fileName){
+	public void createNewFile(String fileName) {
 		System.out.println("[@Naming Server] Creating new file initiated");
 		int luckyServers[] = new int[replicationFactor];
 		List<StorageLocation> storageServers = new ArrayList<StorageLocation>();
 		Set<Integer> chosenStorageServers = new TreeSet<Integer>();
+
 		for (int i = 0; i < luckyServers.length; i++) {
 
 			// TODO if no replica alive enter infinte loop
 			do {
-				luckyServers[i] = randomGen.nextInt(replicationFactor);
+				luckyServers[i] = randomGen.nextInt(stoargeServersLocationList.size());
 //				System.err.println(luckyServers[i] );
 //				System.err.println(stoargeServersLocationList.get(luckyServers[i]).isAlive());
 			} while(!stoargeServersLocationList.get(luckyServers[i]).isAlive() || chosenStorageServers.contains(luckyServers[i]));
@@ -174,25 +228,15 @@ public class NamingServer implements Remote, NamingServerClientInterface {
 	
 
 	/**
-	 * registers new replica server @ the master by adding required meta data
-	 * @param replicaLoc
-	 * @param replicaStub
+	 * registers new storage  server @ the naming server by adding required meta data
+	 * @param storageLocation
+	 * @param storageServerStub
 	 */
-	public void registerStorageServer(StorageLocation replicaLoc, Remote replicaStub){
-		stoargeServersLocationList.add(replicaLoc);
-		storageServersStubsList.add( (StorageNamingServerInterface) replicaStub);
+	public void registerStorageServer(StorageLocation storageLocation, Remote storageServerStub){
+		stoargeServersLocationList.add(storageLocation);
+		storageServersStubsList.add( (StorageNamingServerInterface) storageServerStub);
 	}
-	static NamingServer createNamingServer() throws AccessException, RemoteException{
 
-		//step 3 a) to go no-arg constructor of NamingServer..
-		NamingServer namingServer = new NamingServer();
-		//step 4: generate namingServerStub and bind with registry
-		NamingServerClientInterface namingServerStub=
-				(NamingServerClientInterface) UnicastRemoteObject.exportObject(namingServer, 0);
-		DFSMain.registry.rebind("NamingServerClientInterface", namingServerStub);
-		System.err.println("Naming Server is ready to accept register storage server and to serve client read write request");
-		return namingServer;
-	}
 
 	class StorageServerStatusCheckTask extends TimerTask {
 

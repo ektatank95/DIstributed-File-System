@@ -52,4 +52,13 @@ public interface StorageServerClientInterface extends Remote {
 	 * @throws RemoteException
 	 */
 	public boolean abort(long txnID) throws RemoteException;
+
+	/**
+	 * delete a file from replica server
+	 * @param fileName
+	 * @throws RemoteException
+	 * @throws IOException
+	 */
+	public String deleteFile(String fileName) throws RemoteException, IOException;
+
 }

@@ -38,4 +38,14 @@ public interface NamingServerClientInterface extends Remote {
 	 * @throws RemoteException
 	 */
 	public StorageLocation locatePrimaryReplica(String fileName) throws RemoteException;
+
+	/**
+	 * This method will create e new black file...
+	 * @param fileName
+	 */
+	public void createNewEmptyFile(String fileName) throws  RemoteException;
+
+	public String deleteFile(String fileName) throws  RemoteException;
+
+	public List<StorageLocation> fileStorageLocation(String fileName) throws RemoteException;
 }

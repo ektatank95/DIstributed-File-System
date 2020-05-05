@@ -13,7 +13,7 @@ public interface StorageNamingServerInterface extends Remote {
 	 * @throws IOException 
 	 */
 	public void createFile(String fileName) throws RemoteException, IOException;
-	
+
 	/**
 	 * makes the current replica the master of the passed file
 	 * @param fileName 

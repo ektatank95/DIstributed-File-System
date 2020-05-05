@@ -3,6 +3,7 @@ import java.rmi.NotBoundException;
 import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
+import java.util.ArrayList;
 import java.util.List;
 
 
@@ -35,10 +36,10 @@ public class Client {
 		System.out.println("[@client] Naming Server Granted read operation");
 		
 		// TODO fetch from all and verify 
-		StorageLocation replicaLoc = locations.get(0);
+		StorageLocation storageLocation = locations.get(0);
          //get storageServerstub of storoage server where file is specified..
-		StorageServerClientInterface replicaStub = (StorageServerClientInterface) registry.lookup("ReplicaClient"+replicaLoc.getId());
-		FileContent fileContent = replicaStub.read(fileName);
+		StorageServerClientInterface storageServerStub = (StorageServerClientInterface) registry.lookup("StorageServer_"+storageLocation.getId());
+		FileContent fileContent = storageServerStub.read(fileName);
 		System.out.println("[@client] read operation completed successfuly");
 		System.out.println("[@client] data:");
 		
@@ -51,12 +52,15 @@ public class Client {
 	//doubt
 	public void write (String fileName, byte[] data) throws IOException, NotBoundException, MessageNotFoundException{
 		//client will request namingServer to give write access to particular File .This  request is done to get location of storage server
+
 		WriteAck ackMsg = namingServerStub.write(fileName);
-		StorageServerClientInterface storageServerStub = (StorageServerClientInterface) registry.lookup("ReplicaClient"+ackMsg.getLoc().getId());
-		
+		StorageServerClientInterface storageServerStub = (StorageServerClientInterface) registry.lookup("StorageServer_" +ackMsg.getLoc().getId());
+
 		System.out.println("[@client] Naming Server  granted write operation to Client");
-		
+
+		//write in segN parts
 		int segN = (int) Math.ceil(1.0*data.length/chunkSize);
+
 		FileContent fileContent = new FileContent(fileName);
 		ChunkAck chunkAck;
 		byte[] chunk = new byte[chunkSize];
@@ -85,47 +89,19 @@ public class Client {
 		storageServerStub.commit(ackMsg.getTransactionId(), segN);
 		System.out.println("[@client] commit operation complete");
 	}
-	
-	/*public void commit(String fileName, long txnID, long seqN) throws MessageNotFoundException, IOException, NotBoundException{
-		StorageLocation primaryLoc = namingServerStub.locatePrimaryReplica(fileName);
-		StorageServerClientInterface primaryStub = (StorageServerClientInterface) registry.lookup("ReplicaClient"+primaryLoc.getId());
-		primaryStub.commit(txnID, seqN);
-		System.out.println("[@client] commit operation complete");
-	}
-	*/
-/*	public void batchOperations(String[] cmds){
-		System.out.println("[@client] batch operations started");
-		String cmd ;
-		String[] tokens;
-		for (int i = 0; i < cmds.length; i++) {
-			cmd = cmds[i];
-			tokens = cmd.split(", ");
-			try {
-				if (tokens[0].trim().equals("read"))
-					this.read(tokens[1].trim());
-				else if (tokens[0].trim().equals("write"))
-					this.write(tokens[1].trim(), tokens[2].trim().getBytes());
-				else if (tokens[0].trim().equals("commit"))
-						this.commit(tokens[1].trim(), Long.parseLong(tokens[2].trim()), Long.parseLong(tokens[3].trim()));
-			}catch (IOException | NotBoundException | MessageNotFoundException e){
-				System.err.println("Operation "+i+" Failed");
-			}
-		}
-		System.out.println("[@client] batch operations completed");
-	}*/
-
 
 	public static void launchClients(){
 		try {
 			Client c = new Client();
-			char[] ss = "File 1 test test END ".toCharArray();
+			char[] ss = "I am writing in new File without creating it ".toCharArray();
 			byte[] data = new byte[ss.length];
 			for (int i = 0; i < ss.length; i++)
 				data[i] = (byte) ss[i];
 
-			c.write("file1", data);
-			byte[] ret = c.read("file1");
-			System.out.println("file1: " + ret);
+			c.write("bhautik", data);
+			byte[] ret = c.read("bhautik");
+			System.out.println("bhautik: " + ret);
+
 
 			c = new Client();
 			ss = "File 1 Again Again END ".toCharArray();
@@ -151,4 +127,33 @@ public class Client {
 			e.printStackTrace();
 		}
 	}
+
+	public void createNewFile(String fileName) throws RemoteException {
+		namingServerStub.createNewEmptyFile(fileName);
+	}
+
+    public String deleteFile(String fileName) throws IOException, NotBoundException {
+        List<StorageServerClientInterface> storageServers = findStorageLocation(fileName);
+        if (storageServers==null){
+        	return "File not found";
+		}
+        for (int i=0;i<storageServers.size();i++) {
+            storageServers.get(i).deleteFile(fileName);
+        }
+        return "File deleted return dummy";
+    }
+
+    private List<StorageServerClientInterface> findStorageLocation(String fileName) throws RemoteException, NotBoundException {
+        List<StorageLocation> storageLocations = namingServerStub.fileStorageLocation(fileName);
+
+        List<StorageServerClientInterface> storageServers=new ArrayList<>();
+        if (storageLocations==null || storageLocations.size()==0){
+        	return null;
+		}
+        for(int i=0;i<storageLocations.size();i++) {
+        	int id=storageLocations.get(i).getId();
+            storageServers.add((StorageServerClientInterface) registry.lookup("StorageServer_" +id));
+        }
+        return storageServers;
+    }
 }
